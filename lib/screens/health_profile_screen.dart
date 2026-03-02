@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../main.dart';
+import '../services/profile_service.dart';
 
 class HealthProfileScreen extends StatefulWidget {
   const HealthProfileScreen({super.key});
@@ -12,7 +13,8 @@ class HealthProfileScreen extends StatefulWidget {
 }
 
 class _HealthProfileScreenState extends State<HealthProfileScreen> {
-  // --- DATA SOURCES ---
+  final ProfileService _profileService = ProfileService();
+
   final List<String> _allConditions = [
     'Diabetes',
     'Hypertension',
@@ -40,6 +42,10 @@ class _HealthProfileScreenState extends State<HealthProfileScreen> {
   final List<String> _selectedAllergies = [];
   bool _isLoading = false;
 
+  // 🚀 Added specific loading states for the "+" buttons
+  bool _isAddingCondition = false;
+  bool _isAddingAllergy = false;
+
   // Controllers for the two "Add Other" fields
   final TextEditingController _otherConditionController =
       TextEditingController();
@@ -52,20 +58,67 @@ class _HealthProfileScreenState extends State<HealthProfileScreen> {
     super.dispose();
   }
 
-  // --- LOGIC: Add a new custom chip ---
-  void _addCustomItem(
+  // --- LOGIC: Add a new custom chip (🚀 Updated for Gemini AI) ---
+  Future<void> _addCustomItem(
     TextEditingController controller,
     List<String> mainList,
     List<String> selectedList,
-  ) {
+    bool isAllergy, // 🚀 Added to know how to prompt Gemini
+  ) async {
     final text = controller.text.trim();
+
     // Don't add empty or duplicate items
-    if (text.isNotEmpty && !mainList.contains(text)) {
+    if (text.isEmpty || mainList.contains(text)) return;
+
+    // 🚀 Start loading spinner
+    setState(() {
+      if (isAllergy) {
+        _isAddingAllergy = true;
+      } else {
+        _isAddingCondition = true;
+      }
+    });
+
+    FocusScope.of(context).unfocus(); // Close keyboard
+
+    try {
+      // 🚀 Call Gemini and save to Firebase Dynamic_Rules
+      await _profileService.addCustomCondition(text, isAllergy: isAllergy);
+
       setState(() {
         mainList.add(text);
         selectedList.add(text);
         controller.clear();
       });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("✅ Rules for $text generated!"),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("❌ Error: Could not generate rules."),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      // 🚀 Stop loading spinner
+      if (mounted) {
+        setState(() {
+          if (isAllergy) {
+            _isAddingAllergy = false;
+          } else {
+            _isAddingCondition = false;
+          }
+        });
+      }
     }
   }
 
@@ -170,14 +223,16 @@ class _HealthProfileScreenState extends State<HealthProfileScreen> {
 
             const SizedBox(height: 15),
 
-            // Add other Condition
+            // Add other Condition (🚀 Updated parameters)
             _buildAddOtherRow(
               controller: _otherConditionController,
               label: "Add other condition...",
+              isAdding: _isAddingCondition,
               onAdd: () => _addCustomItem(
                 _otherConditionController,
                 _allConditions,
                 _selectedConditions,
+                false, // isAllergy = false
               ),
             ),
 
@@ -210,14 +265,16 @@ class _HealthProfileScreenState extends State<HealthProfileScreen> {
 
             const SizedBox(height: 15),
 
-            // Add other Allergy
+            // Add other Allergy (🚀 Updated parameters)
             _buildAddOtherRow(
               controller: _otherAllergyController,
               label: "Add other allergy...",
+              isAdding: _isAddingAllergy,
               onAdd: () => _addCustomItem(
                 _otherAllergyController,
                 _allAllergies,
                 _selectedAllergies,
+                true, // isAllergy = true
               ),
             ),
 
@@ -278,6 +335,7 @@ class _HealthProfileScreenState extends State<HealthProfileScreen> {
     required TextEditingController controller,
     required String label,
     required VoidCallback onAdd,
+    required bool isAdding,
   }) {
     return Row(
       children: [
@@ -299,13 +357,17 @@ class _HealthProfileScreenState extends State<HealthProfileScreen> {
                 vertical: 15,
               ),
             ),
-            onSubmitted: (_) => onAdd(),
+            onSubmitted: (_) {
+              if (!isAdding) onAdd();
+            },
           ),
         ),
         const SizedBox(width: 10),
 
-        // The "Add" Button
+        // The "Add" Button / Loading Spinner
         Container(
+          width: 48,
+          height: 48,
           decoration: BoxDecoration(
             color: Colors.white,
             shape: BoxShape.circle,
@@ -317,11 +379,23 @@ class _HealthProfileScreenState extends State<HealthProfileScreen> {
               ),
             ],
           ),
-          child: IconButton(
-            onPressed: onAdd,
-            icon: const Icon(Icons.add, color: Color(0xFF1B4D3E), size: 28),
-            tooltip: "Add to list",
-          ),
+          child: isAdding
+              ? const Padding(
+                  padding: EdgeInsets.all(12.0),
+                  child: CircularProgressIndicator(
+                    color: Color(0xFF1B4D3E),
+                    strokeWidth: 3,
+                  ),
+                )
+              : IconButton(
+                  onPressed: onAdd,
+                  icon: const Icon(
+                    Icons.add,
+                    color: Color(0xFF1B4D3E),
+                    size: 28,
+                  ),
+                  tooltip: "Add to list",
+                ),
         ),
       ],
     );

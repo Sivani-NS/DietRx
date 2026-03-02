@@ -85,10 +85,49 @@ class ScanService {
       print("Error fetching profile: $e");
     }
 
+    // --- FETCH DYNAMIC RULES FROM FIRESTORE ---
+    Map<String, HealthRule> combinedRules = Map.of(diseaseRules);
+    Set<String> allUserConditions = {...userConditions, ...userAllergies};
+
+    for (String condition in allUserConditions) {
+      String docId = condition.trim().toLowerCase();
+      
+      bool existsLocally = combinedRules.keys.any((k) => k.toLowerCase() == docId);
+      
+      if (!existsLocally) {
+        try {
+          DocumentSnapshot ruleDoc = await FirebaseFirestore.instance.collection('Dynamic_Rules').doc(docId).get();
+          
+          if (ruleDoc.exists) {
+            var data = ruleDoc.data() as Map<String, dynamic>;
+            List<String> keywords = List<String>.from(data['forbiddenKeywords'] ?? []);
+            Map<String, double> limits = {};
+            
+            if (data['nutrientLimits'] != null) {
+              (data['nutrientLimits'] as Map<String, dynamic>).forEach((key, value) {
+                limits[key] = (value as num).toDouble();
+              });
+            }
+            
+            combinedRules[condition] = HealthRule(
+              forbiddenKeywords: keywords,
+              nutrientLimits: limits,
+            );
+          } else {
+            unknown.add(condition);
+          }
+        } catch (e) {
+          print("Error fetching dynamic rule for $condition: $e");
+          unknown.add(condition);
+        }
+      }
+    }
+
     // D. ANALYZE HEALTH RULES
     for (var condition in userConditions) {
-      if (diseaseRules.containsKey(condition)) {
-        final rule = diseaseRules[condition]!;
+      // Use combinedRules instead of diseaseRules
+      if (combinedRules.containsKey(condition)) {
+        final rule = combinedRules[condition]!;
 
         // 1. Check Nutrient Limits
         rule.nutrientLimits.forEach((nutrientKey, limit) {
@@ -108,8 +147,6 @@ class ScanService {
             break;
           }
         }
-      } else {
-        unknown.add(condition);
       }
     }
 
@@ -124,8 +161,9 @@ class ScanService {
         warnings.add("ALLERGY: Contains $allergy (Found in ingredients)");
         continue;
       }
-      if (diseaseRules.containsKey(allergy)) {
-        final rule = diseaseRules[allergy]!;
+      // Use combinedRules instead of diseaseRules
+      if (combinedRules.containsKey(allergy)) {
+        final rule = combinedRules[allergy]!;
         for (var forbidden in rule.forbiddenKeywords) {
           if (ingredients.contains(forbidden.toLowerCase())) {
             warnings.add("ALLERGY: Contains $forbidden");
@@ -156,6 +194,7 @@ class ScanService {
           item,
           userConditions,
           userAllergies,
+          combinedRules, 
         );
 
         if (safetyReason != null) {
@@ -188,10 +227,12 @@ class ScanService {
     );
   }
 
+  // Updated helper to accept combinedRules map
   String? _getSafetyReason(
     Map<String, dynamic> item,
     List<String> conditions,
     List<String> allergies,
+    Map<String, HealthRule> rules,
   ) {
     String ingredients = (item['ingredients'] ?? "").toLowerCase();
     String allergenCol = (item['allergens'] ?? "").toLowerCase();
@@ -210,8 +251,8 @@ class ScanService {
     List<String> goodPoints = [];
 
     for (var condition in conditions) {
-      if (diseaseRules.containsKey(condition)) {
-        final rule = diseaseRules[condition]!;
+      if (rules.containsKey(condition)) {
+        final rule = rules[condition]!;
 
         bool failed = false;
         rule.nutrientLimits.forEach((key, limit) {
@@ -235,6 +276,13 @@ class ScanService {
     for (var allergy in allergies) {
       if (allergenCol.contains(allergy.toLowerCase())) return null;
       if (ingredients.contains(allergy.toLowerCase())) return null;
+      
+      if (rules.containsKey(allergy)) {
+        for (var forbidden in rules[allergy]!.forbiddenKeywords) {
+          if (ingredients.contains(forbidden.toLowerCase())) return null;
+        }
+      }
+      
       goodPoints.add("No $allergy");
     }
 
