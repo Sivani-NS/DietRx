@@ -26,10 +26,9 @@ class ProfileService {
         final ruleDoc = await _firestore.collection('Dynamic_Rules').doc(docId).get();
         
         if (!ruleDoc.exists) {
-          // --- STEP 3: Not in Firebase either! Call Gemini ---
+          // --- STEP 3: Not in Firebase either! Call API ---
           print("🔍 $formattedName is completely unknown. Asking Gemini...");
           
-          // Note: In your UI, you should show a CircularProgressIndicator while this runs!
           HealthRule? newRule = await DynamicRuleService.generateRuleForCondition(
             formattedName, 
             isAllergy: isAllergy,
@@ -54,7 +53,6 @@ class ProfileService {
       }
 
       // --- STEP 5: Add to the User's Personal Profile ---
-      // We use `arrayUnion` so it adds the new item without deleting their old ones
       final userRef = _firestore.collection('Health_Profiles').doc(user.uid);
       
       if (isAllergy) {
