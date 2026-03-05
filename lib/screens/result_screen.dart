@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/scan_result.dart';
 import '../widgets/animated_leaf.dart';
 import '../widgets/result_components.dart';
+import '../widgets/animated_warning.dart';
 
 class ResultScreen extends StatefulWidget {
   final ScanResult result;
@@ -134,7 +135,9 @@ class _ResultScreenState extends State<ResultScreen>
             ),
           ),
 
-          // --- LOOPING LEAF ACCENTS ---
+          // --- BACKGROUND ACCENT ICONS ---
+
+          // 1. LOOPING LEAF ACCENTS (If Safe)
           if (widget.result.isSafe) ...[
             AnimatedLeaf(
               finalTop: MediaQuery.of(context).size.height * 0.20,
@@ -149,6 +152,26 @@ class _ResultScreenState extends State<ResultScreen>
               size: 50,
               delay: 0.4,
               landsOnLeft: false,
+            ),
+          ],
+
+          // 2. SHARP WARNING ICONS (If Not Safe)
+          if (!widget.result.isSafe && !widget.result.isMissingData) ...[
+            AnimatedWarningIcon(
+              top: MediaQuery.of(context).size.height * 0.20,
+              left: 40,
+              size: 35,
+              delay: 0.1,
+              isLeft: true,
+              color: pillColor,
+            ),
+            AnimatedWarningIcon(
+              top: MediaQuery.of(context).size.height * 0.35,
+              right: 40,
+              size: 35,
+              delay: 0.3,
+              isLeft: false,
+              color: pillColor,
             ),
           ],
 
