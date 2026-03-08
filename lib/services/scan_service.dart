@@ -9,10 +9,64 @@ class ScanService {
 
   Future<ScanResult?> processBarcode(String barcode) async {
     // A. Fetch Product from SQLite
-    final product = await _dbHelper.getProduct(barcode);
+    Map<String, dynamic>? product = await _dbHelper.getProduct(barcode);
+
+    // B. If not in SQLite, check Firebase database!
+    if (product == null) {
+      try {
+        var doc = await FirebaseFirestore.instance
+            .collection('Products')
+            .doc(barcode)
+            .get();
+
+        if (doc.exists) {
+          var data = doc.data()!;
+
+          String ingredientsStr = "";
+          if (data['ingredients'] is List) {
+            ingredientsStr = (data['ingredients'] as List).join(", ");
+          } else {
+            ingredientsStr = data['ingredients'].toString();
+          }
+
+          double? parseNutrient(String key) {
+            if (data['nutrition'] == null) return null;
+            var val = data['nutrition'][key];
+            if (val == null || val.toString().toLowerCase() == 'not listed')
+              return null;
+            // Keeps only numbers and decimals
+            String numStr = val.toString().replaceAll(RegExp(r'[^0-9.]'), '');
+            return double.tryParse(numStr);
+          }
+
+          product = {
+            'name': data['name'],
+            'ingredients': ingredientsStr,
+            'image_url': null,
+            'nutriscore': null,
+            'nova_group': null,
+            'categories': data['category'],
+            'labels': null,
+            'sugars_100g': parseNutrient('sugar'),
+            'salt_100g': null,
+            'fat_100g': parseNutrient('fat'),
+            'saturated_fat_100g': parseNutrient('saturated_fat'),
+            'calories_100g': parseNutrient('calories'),
+            'carbohydrates_100g':
+                parseNutrient('carbohydrates') ?? parseNutrient('carbs'),
+            'sodium_100g': parseNutrient('sodium'),
+            'cholesterol_100g': parseNutrient('cholesterol'),
+            'trans_fat_100g': parseNutrient('trans_fat'),
+          };
+        }
+      } catch (e) {
+        print("Error fetching from Firebase: $e");
+      }
+    }
+
     if (product == null) return null;
 
-    // B. Parse Data
+    // D. Parse Data
     String name = product['name'] ?? "Unknown Product";
     String ingredients = (product['ingredients'] ?? "").toLowerCase();
     String? imageUrl = product['image_url'];
@@ -43,7 +97,7 @@ class ScanService {
         nutrients['fat_100g'] == null &&
         nutrients['sat_fat_100g'] == null);
 
-    // --- C. FETCH USER PROFILE ---
+    // --- E. FETCH USER PROFILE ---
     List<String> userConditions = [];
     List<String> userAllergies = [];
 
@@ -133,9 +187,8 @@ class ScanService {
       }
     }
 
-    // D. ANALYZE HEALTH RULES
+    // F. ANALYZE HEALTH RULES
     for (var condition in userConditions) {
-      // Use combinedRules instead of diseaseRules
       if (combinedRules.containsKey(condition)) {
         final rule = combinedRules[condition]!;
 
@@ -169,7 +222,6 @@ class ScanService {
         warnings.add("ALLERGY: Contains $allergy (Found in ingredients)");
         continue;
       }
-      // Use combinedRules instead of diseaseRules
       if (combinedRules.containsKey(allergy)) {
         final rule = combinedRules[allergy]!;
         for (var forbidden in rule.forbiddenKeywords) {
@@ -186,13 +238,10 @@ class ScanService {
       warnings.add("Ultra-Processed Food (Nova 4)");
     }
 
-    // --- E. FIND ALTERNATIVES ---
+    // --- G. FIND ALTERNATIVES ---
     List<Map<String, dynamic>> safeAlternatives = [];
 
-    // Only look for alternatives if Unsafe or Totally Missing Data
-    if ((warnings.isNotEmpty || isMissingData) &&
-        categories != null &&
-        categories.isNotEmpty) {
+    if (categories != null && categories.isNotEmpty) {
       final candidates = await _dbHelper.getAlternatives(categories);
 
       for (var item in candidates) {
@@ -215,7 +264,7 @@ class ScanService {
       }
     }
 
-    // --- F. SAVE TO SQLITE HISTORY ---
+    // --- H. SAVE TO SQLITE HISTORY ---
     String status = isMissingData
         ? 'unknown'
         : (warnings.isEmpty ? 'safe' : 'unsafe');
@@ -224,7 +273,6 @@ class ScanService {
     return ScanResult(
       productName: name,
       barcode: barcode,
-      // Safe if: No Warnings AND Data isn't completely missing
       isSafe: warnings.isEmpty && !isMissingData,
       isMissingData: isMissingData,
       warnings: warnings,
@@ -242,7 +290,6 @@ class ScanService {
     );
   }
 
-  // Updated helper to accept combinedRules map
   String? _getSafetyReason(
     Map<String, dynamic> item,
     List<String> conditions,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../services/scan_service.dart';
 import 'result_screen.dart';
+import '../models/scan_result.dart';
 
 class ScannerScreen extends StatefulWidget {
   const ScannerScreen({super.key});
@@ -86,40 +87,48 @@ class _ScannerScreenState extends State<ScannerScreen> {
     try {
       final result = await _scanService.processBarcode(barcode);
       if (!mounted) return;
-      if (result == null) {
-        _showErrorDialog("Product not found in database.");
-        setState(() => _isProcessing = false);
-      } else {
-        Navigator.pushReplacement(
-          context,
-          PageRouteBuilder(
-            transitionDuration: const Duration(milliseconds: 600),
-            reverseTransitionDuration: const Duration(milliseconds: 600),
-            pageBuilder: (context, animation, secondaryAnimation) {
-              return ResultScreen(result: result);
-            },
-            transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-                  const begin = Offset(0.0, 1.0);
-                  const end = Offset.zero;
-                  const curve = Curves.easeOutCubic;
 
-                  var tween = Tween(
-                    begin: begin,
-                    end: end,
-                  ).chain(CurveTween(curve: curve));
+      final ScanResult finalResult =
+          result ??
+          ScanResult(
+            productName: "Unknown Barcode",
+            barcode: barcode,
+            isSafe: false,
+            isMissingData: true,
+            warnings: [],
+            unknownConditions: [],
+            alternatives: [],
+          );
 
-                  return SlideTransition(
-                    position: animation.drive(tween),
-                    child: child,
-                  );
-                },
-          ),
-        );
-      }
+      // Navigate to the Result Screen
+      Navigator.pushReplacement(
+        context,
+        PageRouteBuilder(
+          transitionDuration: const Duration(milliseconds: 600),
+          reverseTransitionDuration: const Duration(milliseconds: 600),
+          pageBuilder: (context, animation, secondaryAnimation) {
+            return ResultScreen(result: finalResult);
+          },
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            const begin = Offset(0.0, 1.0);
+            const end = Offset.zero;
+            const curve = Curves.easeOutCubic;
+
+            var tween = Tween(
+              begin: begin,
+              end: end,
+            ).chain(CurveTween(curve: curve));
+
+            return SlideTransition(
+              position: animation.drive(tween),
+              child: child,
+            );
+          },
+        ),
+      );
     } catch (e) {
       if (mounted) {
-        _showErrorDialog("Error: $e");
+        _showErrorDialog("Error scanning barcode: $e");
         setState(() => _isProcessing = false);
       }
     }

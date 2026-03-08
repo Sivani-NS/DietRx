@@ -4,7 +4,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/dynamic_rule_service.dart';
-import '../models/scan_result.dart';
 import 'result_screen.dart';
 import '../services/scan_service.dart';
 
@@ -87,7 +86,7 @@ class _IngredientScannerScreenState extends State<IngredientScannerScreen> {
       final List<dynamic> ingredientsList =
           _extractedData?['ingredients'] ?? [];
 
-      // 1. Save to Firestore under the 'Products' collection
+      // 🚀 1. Save the new 'category' field to Firestore
       await FirebaseFirestore.instance
           .collection('Products')
           .doc(widget.scannedBarcode)
@@ -96,6 +95,8 @@ class _IngredientScannerScreenState extends State<IngredientScannerScreen> {
             'barcode': widget.scannedBarcode,
             'ingredients': ingredientsList,
             'nutrition': _extractedData?['nutrition'] ?? {},
+            'category':
+                _extractedData?['category'] ?? "Unknown", // Added category!
             'is_crowdsourced': true,
             'created_at': FieldValue.serverTimestamp(),
           });
